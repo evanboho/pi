@@ -92,7 +92,7 @@ import { getCwdRelativePath } from "../../utils/paths.ts";
 import { getPiUserAgent } from "../../utils/pi-user-agent.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
-import { checkForNewPiVersion, type LatestPiRelease } from "../../utils/version-check.ts";
+import { checkForNewPiRelease, type LatestPiRelease, satisfiesNodeRange } from "../../utils/version-check.ts";
 import { ArminComponent } from "./components/armin.ts";
 import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
@@ -717,9 +717,9 @@ export class InteractiveMode {
 		await this.init();
 
 		// Start version check asynchronously
-		checkForNewPiVersion(this.version).then((newRelease) => {
-			if (newRelease) {
-				this.showNewVersionNotification(newRelease);
+		checkForNewPiRelease(this.version).then((release) => {
+			if (release) {
+				this.showNewVersionNotification(release);
 			}
 		});
 
@@ -3588,9 +3588,10 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(release: LatestPiRelease): void {
-		const action = theme.fg("accent", `${APP_NAME} update`);
-		const updateInstruction = theme.fg("muted", `New version ${release.version} is available. Run `) + action;
-		const changelogUrl = "https://pi.dev/changelog";
+		const { version: newVersion, minNodeVersion } = release;
+		const requiresNodeUpgrade = !!minNodeVersion && !satisfiesNodeRange(minNodeVersion);
+
+		const changelogUrl = "https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/CHANGELOG.md";
 		const changelogLink = getCapabilities().hyperlinks
 			? hyperlink(theme.fg("accent", "open changelog"), changelogUrl)
 			: theme.fg("accent", changelogUrl);
@@ -3599,19 +3600,30 @@ export class InteractiveMode {
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
-		this.chatContainer.addChild(
-			new Text(`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}`, 1, 0),
-		);
-		if (note) {
-			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(
-				new Markdown(note, 1, 0, this.getMarkdownThemeWithSettings(), {
-					color: (text) => theme.fg("muted", text),
-				}),
+		if (requiresNodeUpgrade) {
+			const nodeHint = theme.fg(
+				"muted",
+				`Requires Node ${minNodeVersion} (you have v${process.versions.node}). Upgrade Node first.`,
 			);
-			this.chatContainer.addChild(new Spacer(1));
+			const body = `${theme.bold(theme.fg("warning", "Update Available"))}\n${theme.fg("muted", `v${newVersion} is available but cannot be installed yet.`)}\n${nodeHint}\n${changelogLine}`;
+			this.chatContainer.addChild(new Text(body, 1, 0));
+		} else {
+			const action = theme.fg("accent", `${APP_NAME} update`);
+			const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. Run `) + action;
+			this.chatContainer.addChild(
+				new Text(`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}`, 1, 0),
+			);
+			if (note) {
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(
+					new Markdown(note, 1, 0, this.getMarkdownThemeWithSettings(), {
+						color: (text) => theme.fg("muted", text),
+					}),
+				);
+				this.chatContainer.addChild(new Spacer(1));
+			}
+			this.chatContainer.addChild(new Text(changelogLine, 1, 0));
 		}
-		this.chatContainer.addChild(new Text(changelogLine, 1, 0));
 		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
 		this.ui.requestRender();
 	}

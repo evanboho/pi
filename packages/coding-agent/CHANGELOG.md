@@ -120,6 +120,7 @@
 - Fixed interactive error messages to render with trailing spacing so reload errors do not run into resource listings ([#4510](https://github.com/earendil-works/pi/issues/4510)).
 - Fixed `.agents` package provenance metadata to survive package-manager scans.
 - Fixed nested code fences in the Termux setup documentation so the example AGENTS.md renders correctly ([#4503](https://github.com/earendil-works/pi/issues/4503)).
+- Fixed `pi update` and the "Update Available" banner looping when the latest release requires a newer Node version than is installed. The banner now explains the Node upgrade requirement (e.g. "Requires Node >=22.19.0") and `pi update` prints a clear message instead of silently re-installing the current version.
 - Fixed tool output expansion while extension confirmation dialogs are focused ([#4429](https://github.com/earendil-works/pi/issues/4429)).
 - Fixed auto-retry for Anthropic streams that end before `message_stop` ([#4433](https://github.com/earendil-works/pi/issues/4433)).
 - Fixed compaction summary calls to clamp requested output tokens to model limits.

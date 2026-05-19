@@ -15,7 +15,7 @@ import {
 import { DefaultPackageManager } from "./core/package-manager.ts";
 import { SettingsManager } from "./core/settings-manager.ts";
 import { spawnProcess } from "./utils/child-process.ts";
-import { getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.ts";
+import { getLatestPiRelease, isNewerPackageVersion, satisfiesNodeRange } from "./utils/version-check.ts";
 import {
 	cleanupWindowsSelfUpdateQuarantine,
 	quarantineWindowsNativeDependencies,
@@ -346,6 +346,19 @@ async function getSelfUpdatePlan(force: boolean): Promise<SelfUpdatePlan> {
 		const latestRelease = await getLatestPiRelease(VERSION);
 		const packageName = latestRelease?.packageName ?? PACKAGE_NAME;
 		if (!latestRelease || packageName !== PACKAGE_NAME || isNewerPackageVersion(latestRelease.version, VERSION)) {
+			if (
+				latestRelease?.minNodeVersion &&
+				!satisfiesNodeRange(latestRelease.minNodeVersion) &&
+				packageName === PACKAGE_NAME
+			) {
+				console.log(
+					chalk.yellow(
+						`${APP_NAME} v${latestRelease.version} requires Node ${latestRelease.minNodeVersion} ` +
+							`(you have v${process.versions.node}). Upgrade Node to update ${APP_NAME}.`,
+					),
+				);
+				return { packageName, shouldRun: false };
+			}
 			return { packageName, shouldRun: true, ...(latestRelease?.note ? { note: latestRelease.note } : {}) };
 		}
 	} catch {

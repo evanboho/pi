@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	checkForNewPiRelease,
 	checkForNewPiVersion,
 	comparePackageVersions,
 	getLatestPiRelease,
 	getLatestPiVersion,
 	isNewerPackageVersion,
+	satisfiesNodeRange,
 } from "../src/utils/version-check.ts";
 
 const originalSkipVersionCheck = process.env.PI_SKIP_VERSION_CHECK;
@@ -33,12 +35,50 @@ describe("version checks", () => {
 		expect(isNewerPackageVersion("0.70.6", "0.70.5")).toBe(true);
 	});
 
+	it("satisfies node engine ranges", () => {
+		expect(satisfiesNodeRange(">=22.19.0", "22.19.0")).toBe(true);
+		expect(satisfiesNodeRange(">=22.19.0", "22.18.0")).toBe(false);
+		expect(satisfiesNodeRange(">=22.19.0", "23.0.0")).toBe(true);
+		expect(satisfiesNodeRange(">=20.6.0", "22.18.0")).toBe(true);
+		expect(satisfiesNodeRange(">=22.19.0 <24", "22.18.0")).toBe(false);
+		// Unparseable ranges default to compatible.
+		expect(satisfiesNodeRange("*", "22.18.0")).toBe(true);
+	});
+
 	it("returns only newer versions", async () => {
 		const fetchMock = vi.fn(async () => Response.json({ version: "1.2.3" }));
 		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(checkForNewPiVersion("1.2.3")).resolves.toBeUndefined();
 		await expect(checkForNewPiVersion("1.2.2")).resolves.toEqual({ version: "1.2.3" });
+	});
+
+	it("suppresses update when new version requires a newer Node", async () => {
+		const fetchMock = vi.fn(async (url: string) => {
+			if (String(url).includes("registry.npmjs.org")) {
+				return Response.json({ engines: { node: ">=99.0.0" } });
+			}
+			return Response.json({ version: "1.2.3", packageName: "@earendil-works/pi-coding-agent" });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		// checkForNewPiVersion hides incompatible updates.
+		await expect(checkForNewPiVersion("1.2.2")).resolves.toBeUndefined();
+		// checkForNewPiRelease still surfaces them for richer UI messages.
+		const release = await checkForNewPiRelease("1.2.2");
+		expect(release).toMatchObject({ version: "1.2.3", minNodeVersion: ">=99.0.0" });
+	});
+
+	it("allows update when new version is compatible with current Node", async () => {
+		const fetchMock = vi.fn(async (url: string) => {
+			if (String(url).includes("registry.npmjs.org")) {
+				return Response.json({ engines: { node: ">=0.0.1" } });
+			}
+			return Response.json({ version: "1.2.3", packageName: "@earendil-works/pi-coding-agent" });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(checkForNewPiVersion("1.2.2")).resolves.toMatchObject({ version: "1.2.3" });
 	});
 
 	it("uses the pi.dev version check api with a pi user agent", async () => {
@@ -58,15 +98,15 @@ describe("version checks", () => {
 	});
 
 	it("returns the active package metadata from the version check api", async () => {
-		const fetchMock = vi.fn(async () =>
-			Response.json({
-				packageName: "@new-scope/pi",
-				version: "1.2.4",
-			}),
-		);
+		const fetchMock = vi.fn(async (url: string) => {
+			if (String(url).includes("registry.npmjs.org")) {
+				return Response.json({});
+			}
+			return Response.json({ packageName: "@new-scope/pi", version: "1.2.4" });
+		});
 		vi.stubGlobal("fetch", fetchMock);
 
-		await expect(getLatestPiRelease("1.2.3")).resolves.toEqual({
+		await expect(getLatestPiRelease("1.2.3")).resolves.toMatchObject({
 			packageName: "@new-scope/pi",
 			version: "1.2.4",
 		});
