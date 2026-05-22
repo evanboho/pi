@@ -162,15 +162,28 @@ interface SubagentDetails {
 }
 
 function getFinalOutput(messages: Message[]): string {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i];
+	// Collect all text blocks from all assistant messages in order.
+	// Return the last one that is longer than any earlier short wrap-up,
+	// falling back to the longest block if the last is just a brief conclusion.
+	// This handles the common case where an agent writes its substantive report,
+	// then issues a verification tool call, then says a short "Done." — without
+	// this fix, only "Done." would be returned to the calling agent, even though
+	// the full report is visible in the Ctrl+O expanded tool result view.
+	const textBlocks: string[] = [];
+	for (const msg of messages) {
 		if (msg.role === "assistant") {
 			for (const part of msg.content) {
-				if (part.type === "text") return part.text;
+				if (part.type === "text" && part.text.trim()) textBlocks.push(part.text);
 			}
 		}
 	}
-	return "";
+	if (textBlocks.length === 0) return "";
+	if (textBlocks.length === 1) return textBlocks[0];
+	const longest = textBlocks.reduce((a, b) => (b.length > a.length ? b : a));
+	const last = textBlocks[textBlocks.length - 1];
+	// Use the last block if it's at least 80% as long as the longest (genuine final answer),
+	// otherwise use the longest (last is a short wrap-up after the real report).
+	return last.length >= longest.length * 0.8 ? last : longest;
 }
 
 function isFailedResult(result: SingleResult): boolean {
